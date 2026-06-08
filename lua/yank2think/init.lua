@@ -52,21 +52,39 @@ local function visual_line_range()
   return l1, l2
 end
 
--- Render one entry as a markdown section (pure -> testable). The "## " header is
--- what the fold expression keys on, so every entry is one collapsible section.
-function M.entry_lines(opts)
-  local range = (opts.l1 == opts.l2) and ("L" .. opts.l1) or ("L" .. opts.l1 .. "-" .. opts.l2)
-  local out = { ("## %s (%s)"):format(opts.path, range) }
-  if opts.prompt and opts.prompt ~= "" then
-    table.insert(out, "> " .. opts.prompt)
+-- The default renderer for one entry. Override the whole thing via
+-- setup({ format = function(entry) ... end }); entry is the table below. If you
+-- change the header style, also set `section_pattern` to match so folding and
+-- the entry count keep working. Returns a list of lines.
+--   entry = { path, l1, l2, range = "L12-30", lang, lines = {..}, prompt }
+function M.default_format(entry)
+  local out = { ("## %s (%s)"):format(entry.path, entry.range) }
+  if entry.prompt and entry.prompt ~= "" then
+    table.insert(out, "> " .. entry.prompt)
   end
   table.insert(out, "")
-  table.insert(out, "```" .. (opts.lang or ""))
-  for _, line in ipairs(opts.lines) do
+  table.insert(out, "```" .. (entry.lang or ""))
+  for _, line in ipairs(entry.lines) do
     table.insert(out, line)
   end
   table.insert(out, "```")
   return out
+end
+
+-- Build the markdown lines for one entry via the configured formatter (pure ->
+-- testable).
+function M.entry_lines(opts)
+  local entry = {
+    path = opts.path,
+    l1 = opts.l1,
+    l2 = opts.l2,
+    range = (opts.l1 == opts.l2) and ("L" .. opts.l1) or ("L" .. opts.l1 .. "-" .. opts.l2),
+    lang = opts.lang,
+    lines = opts.lines,
+    prompt = opts.prompt,
+  }
+  local fmt = (M.config and M.config.format) or M.default_format
+  return fmt(entry)
 end
 
 --------------------------------------------------------------------------------
@@ -83,10 +101,16 @@ local function ensure_buf()
   return M.buf
 end
 
+-- Pattern that marks the first line of an entry (used for counting + folding).
+local function section_pattern()
+  return (M.config and M.config.section_pattern) or "^## "
+end
+
 local function entry_count(buf)
   local n = 0
+  local pat = section_pattern()
   for _, line in ipairs(vim.api.nvim_buf_get_lines(buf, 0, -1, false)) do
-    if line:match("^## ") then
+    if line:match(pat) then
       n = n + 1
     end
   end
@@ -138,7 +162,7 @@ end
 -- foldexpr: start a new level-1 fold at every "## " header, so each entry is its
 -- own collapsible section.
 function M.foldexpr()
-  if vim.fn.getline(vim.v.lnum):match("^## ") then
+  if vim.fn.getline(vim.v.lnum):match(section_pattern()) then
     return ">1"
   end
   return "1"
@@ -233,6 +257,13 @@ local defaults = {
   open_keymap = "<C-y>", -- normal/visual: open the think buffer (false to skip)
   register = "+", -- where `y` in the view copies to
   prompt = true, -- ask for a one-line prompt when adding
+  -- format: function(entry) -> {lines} that renders one appended entry. nil
+  -- uses M.default_format. See default_format for the `entry` fields.
+  format = nil,
+  -- section_pattern: Lua pattern matching the first line of an entry. Folding
+  -- and the entry count key on this; change it if your `format` uses a
+  -- different header style than "## ".
+  section_pattern = "^## ",
 }
 
 function M.setup(opts)

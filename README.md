@@ -75,10 +75,41 @@ require("yank2think").setup({
   open_keymap = "<C-y>",    -- normal/visual: open the think buffer (false to skip)
   register = "+",           -- register `y` copies to ("+" = system clipboard)
   prompt = true,            -- ask for a one-line prompt when adding an entry
+  format = nil,             -- function(entry) -> {lines}: render an entry (see below)
+  section_pattern = "^## ", -- Lua pattern marking an entry's first line (for folding)
 })
 ```
 
 Set a keymap to `false` to map it yourself, then call `require("yank2think").add()` / `.open()` from your own mapping.
+
+### Customising the appended markdown
+
+Every entry is rendered by `format`. Pass your own to change how the path,
+range, prompt, and code are laid out. It receives one `entry` and returns a
+list of lines:
+
+```lua
+-- entry = { path, l1, l2, range = "L12-30", lang, lines = {..}, prompt }
+require("yank2think").setup({
+  format = function(entry)
+    local out = { ("### `%s` %s"):format(entry.path, entry.range) }
+    if entry.prompt and entry.prompt ~= "" then
+      table.insert(out, "")
+      table.insert(out, "**Q:** " .. entry.prompt)
+    end
+    table.insert(out, "")
+    table.insert(out, "```" .. entry.lang)
+    vim.list_extend(out, entry.lines)
+    table.insert(out, "```")
+    return out
+  end,
+  section_pattern = "^### ", -- match your header so folding still works
+})
+```
+
+If your header isn't `## `, set `section_pattern` to match its first line so
+the foldable view and the entry count keep working. You can also wrap the
+built-in renderer via `require("yank2think").default_format(entry)`.
 
 ## Notes
 
